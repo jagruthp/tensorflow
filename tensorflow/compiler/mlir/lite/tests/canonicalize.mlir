@@ -58,8 +58,8 @@ func @reshape_keepAdjacentWithMultipleUse(tensor<4x4x4xf32>) -> (tensor<16x4xf32
   return %0, %1 : tensor<16x4xf32>, tensor<64xf32>
 
 // CHECK-LABEL: func @reshape_keepAdjacentWithMultipleUse
-// CHECK:  %[[CST:.*]]  = constant dense<[16, 4]> : tensor<2xi32>
-// CHECK:  %[[CST_0:.*]]  = constant dense<64> : tensor<1xi32>
+// CHECK-DAG:  %[[CST:.*]]  = constant dense<[16, 4]> : tensor<2xi32>
+// CHECK-DAG:  %[[CST_0:.*]]  = constant dense<64> : tensor<1xi32>
 // CHECK:  %[[RESHAPE_1:.*]] = "tfl.reshape"(%arg0, %[[CST]]) : (tensor<4x4x4xf32>, tensor<2xi32>) -> tensor<16x4xf32>
 // CHECK:  %[[RESHAPE_2:.*]] = "tfl.reshape"(%arg0, %[[CST_0]]) : (tensor<4x4x4xf32>, tensor<1xi32>) -> tensor<64xf32>
 // CHECK:  return  %[[RESHAPE_1]],  %[[RESHAPE_2]]
@@ -108,6 +108,16 @@ func @RemoveRedundantPack(%arg0: tensor<2x5xf32>) -> (tensor<2x5xf32>, tensor<5x
   // CHECK: %[[UNPACK:.*]]:2 = "tfl.unpack"
   // CHECK-NOT: pack
   // CHECK: return %arg0, %[[UNPACK]]#0 : tensor<2x5xf32>, tensor<5xf32>
+}
+
+// -----
+
+// CHECK-LABEL: @ReplacePackWithReshape
+func @ReplacePackWithReshape(%arg0: tensor<5xf32>) -> tensor<1x5xf32> {
+  %1 = "tfl.pack"(%arg0) {axis = 0 : i32, values_count = 1 : i32} : (tensor<5xf32>) -> (tensor<1x5xf32>)
+  // CHECK: reshape
+  // CHECK-NOT: pack
+  return %1: tensor<1x5xf32>
 }
 
 // -----
@@ -204,3 +214,47 @@ func @WhileWithNonReadOnlyVariableResources(%arg0: tensor<i32>) -> tensor<!tf.re
 // CHECK: "tfl.while"
 // CHECK: (tensor<i32>, tensor<i32>, tensor<!tf.resource>) -> (tensor<i32>, tensor<i32>, tensor<!tf.resource>)
 }
+
+// CHECK-LABEL: @RemoveFcZeroBias
+func @RemoveFcZeroBias(%arg0: tensor<1x37xf32>, %arg1: tensor<40x37xf32>) -> tensor<1x40xf32> {
+  %0 = "tfl.pseudo_const"() {value = dense<0.0> : tensor<40xf32>} : () -> tensor<40xf32>
+  %1 = "tfl.fully_connected"(%arg0, %arg1, %0) {fused_activation_function = "NONE", keep_num_dims = false, weights_format = "DEFAULT"} : (tensor<1x37xf32>, tensor<40x37xf32>, tensor<40xf32>) -> tensor<1x40xf32>
+// CHECK: "tfl.fully_connected"
+// CHECK-SAME: (tensor<1x37xf32>, tensor<40x37xf32>, none) -> tensor<1x40xf32>
+  return %1 : tensor<1x40xf32>
+}
+
+// CHECK-LABEL: RemoveLstmQuantZeroBias
+func @RemoveLstmQuantZeroBias(
+  %arg0: tensor<1x528xf32>,
+  %arg1: tensor<2048x528xf32>,
+  %arg2: tensor<2048x528xf32>,
+  %arg3: tensor<2048x528xf32>,
+  %arg4: tensor<2048x528xf32>,
+  %arg5: tensor<2048x640xf32>,
+  %arg6: tensor<2048x640xf32>,
+  %arg7: tensor<2048x640xf32>,
+  %arg8: tensor<2048x640xf32>,
+  %arg9: tensor<2048xf32>,
+  %arg10: tensor<2048xf32>,
+  %arg11: tensor<2048xf32>,
+  %arg12: tensor<2048xf32>,
+  %arg13: tensor<640x2048xf32>,
+  %arg14: tensor<640xf32>,
+  %arg15: tensor<2048xf32>,
+  %arg16: tensor<2048xf32>,
+  %arg17: tensor<2048xf32>,
+  %arg18: tensor<2048xf32>,
+  %arg19: tensor<1x640xf32>,
+  %arg20: tensor<1x2048xf32>
+) -> tensor<1x640xf32> {
+  %cst = constant unit
+  %zero = "tfl.pseudo_const"() {value = dense<0.0> : tensor<640xf32>} : () -> tensor<640xf32>
+  %0 = "tfl.lstm"(%arg0, %arg1, %arg2, %arg3, %arg4, %arg5, %arg6, %arg7, %arg8, %cst, %cst, %cst, %arg9, %arg10, %arg11, %arg12, %arg13, %zero, %arg19, %arg20, %arg15, %arg16, %arg17, %arg18) ({}) {
+     cell_clip = 1.000000e+01 : f32, fused_activation_function = "TANH", kernel_type = "FULL", proj_clip = 0.01 : f32
+  } : (tensor<1x528xf32>, tensor<2048x528xf32>, tensor<2048x528xf32>, tensor<2048x528xf32>, tensor<2048x528xf32>, tensor<2048x640xf32>, tensor<2048x640xf32>, tensor<2048x640xf32>, tensor<2048x640xf32>, none, none, none, tensor<2048xf32>, tensor<2048xf32>, tensor<2048xf32>, tensor<2048xf32>, tensor<640x2048xf32>, tensor<640xf32>, tensor<1x640xf32>, tensor<1x2048xf32>, tensor<2048xf32>, tensor<2048xf32>, tensor<2048xf32>, tensor<2048xf32>) -> tensor<1x640xf32>
+    return %0 : tensor<1x640xf32>
+// CHECK: %[[NONE:.+]] = constant unit
+// CHECK: "tfl.lstm"(%arg0, %arg1, %arg2, %arg3, %arg4, %arg5, %arg6, %arg7, %arg8, %[[NONE]], %[[NONE]], %[[NONE]], %arg9, %arg10, %arg11, %arg12, %arg13, %[[NONE]], %arg19, %arg20, %arg15, %arg16, %arg17, %arg18)
+}
+

@@ -7,6 +7,7 @@
 #
 #   The libraries in this package are not allowed to have ANY dependencies
 #   to any TensorFlow code outside this package.
+load("@bazel_skylib//lib:selects.bzl", "selects")
 load(
     "//tensorflow/core/platform:build_config_root.bzl",
     "if_static",
@@ -36,7 +37,7 @@ load(
 )
 load(
     "//tensorflow:tensorflow.bzl",
-    "if_chromiumos",
+    "if_google",
     "if_not_android",
     "if_windows",
     "tf_cc_test",
@@ -63,11 +64,17 @@ package(
     default_visibility = [
         "//visibility:public",
     ],
-    licenses = ["notice"],  # Apache 2.0
+    licenses = ["notice"],
 )
 
 # Authorized users go here.
-package_group(name = "friends")
+package_group(
+    name = "friends",
+    packages = if_google([
+        "@tf_runtime//...",
+        "//third_party/tf_runtime_google/...",
+    ]),
+)
 
 exports_files(
     [
@@ -221,11 +228,20 @@ cc_library(
     srcs = ["denormal.cc"],
     hdrs = ["denormal.h"],
     deps = [
-        ":byte_order",
-        ":logging",
         ":macros",
         ":platform",
         ":platform_port",
+    ],
+)
+
+tf_cc_test(
+    name = "denormal_test",
+    size = "small",
+    srcs = ["denormal_test.cc"],
+    deps = [
+        ":denormal",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
     ],
 )
 
@@ -552,6 +568,26 @@ cc_library(
 )
 
 cc_library(
+    name = "intrusive_ptr",
+    hdrs = ["intrusive_ptr.h"],
+    deps = [],
+)
+
+tf_cc_test(
+    name = "intrusive_ptr_test",
+    size = "small",
+    srcs = [
+        "intrusive_ptr_test.cc",
+    ],
+    deps = [
+        ":intrusive_ptr",
+        ":refcount",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+    ],
+)
+
+cc_library(
     name = "regexp",
     hdrs = ["regexp.h"],
     deps = [
@@ -634,6 +670,11 @@ cc_library(
 )
 
 cc_library(
+    name = "stack_frame",
+    hdrs = ["stack_frame.h"],
+)
+
+cc_library(
     name = "status",
     srcs = ["status.cc"],
     hdrs = ["status.h"],
@@ -641,6 +682,7 @@ cc_library(
         ":logging",
         ":macros",
         ":mutex",
+        ":stack_frame",
         ":stacktrace",
         ":str_util",
         ":strcat",
@@ -649,6 +691,37 @@ cc_library(
         ":types",
         "//tensorflow/core/protobuf:error_codes_proto_impl_cc",
         "@com_google_absl//absl/base",
+    ],
+)
+
+cc_library(
+    name = "status_matchers",
+    testonly = 1,
+    srcs = ["status_matchers.cc"],
+    hdrs = ["status_matchers.h"],
+    deps = [
+        "//tensorflow/core:protos_all_cc",
+        "//tensorflow/core:test",
+        "//tensorflow/core/platform:status",
+        "//tensorflow/core/platform:statusor",
+    ],
+)
+
+cc_library(
+    name = "statusor",
+    srcs = [
+        "statusor.cc",
+        "statusor_internals.h",
+    ],
+    hdrs = ["statusor.h"],
+    deps = [
+        ":logging",
+        ":macros",
+        ":status",
+        "//tensorflow/core/lib/core:errors",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/types:span",
     ],
 )
 
@@ -682,6 +755,7 @@ cc_library(
 cc_library(
     name = "stringpiece",
     hdrs = ["stringpiece.h"],
+    compatible_with = get_compatible_with_portable(),
     deps = [
         "@com_google_absl//absl/strings",
     ],
@@ -785,7 +859,7 @@ cc_library(
     compatible_with = get_compatible_with_portable(),
     deps = [
         ":cord",
-        "@com_google_absl//absl/strings",
+        ":stringpiece",
     ],
 )
 
@@ -869,6 +943,18 @@ tf_cc_test(
         "//tensorflow/core:test",
         "//tensorflow/core:test_main",
         "//tensorflow/core/platform:str_util",
+    ],
+)
+
+tf_cc_test(
+    name = "statusor_test",
+    size = "small",
+    srcs = ["statusor_test.cc"],
+    deps = [
+        ":statusor",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
     ],
 )
 
@@ -1141,11 +1227,27 @@ tf_cc_test(
 )
 
 tf_cc_test(
+    name = "status_matchers_test",
+    size = "small",
+    srcs = ["status_matchers_test.cc"],
+    deps = [
+        ":status_matchers",
+        "//tensorflow/core:protos_all_cc",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core/platform:errors",
+        "//tensorflow/core/platform:status",
+        "//tensorflow/core/platform:statusor",
+    ],
+)
+
+tf_cc_test(
     name = "tstring_test",
     size = "small",
     srcs = ["tstring_test.cc"],
     deps = [
         ":cord",
+        ":stringpiece",
         ":tstring",
         "//tensorflow/core:test",
         "//tensorflow/core:test_main",
@@ -1385,9 +1487,11 @@ filegroup(
         "ram_file_system.h",
         "random.h",
         "resource.h",
+        "stack_frame.h",
         "stacktrace.h",
         "stacktrace_handler.h",
         "status.h",
+        "statusor.h",
         "str_util.h",
         "strcat.h",
         "stringpiece.h",
@@ -1480,6 +1584,7 @@ filegroup(
         "demangle.h",
         "denormal.h",
         "host_info.h",
+        "intrusive_ptr.h",
         "platform.h",
         "protobuf_internal.h",
         "refcount.h",
@@ -1606,6 +1711,7 @@ filegroup(
         "hash.h",
         "host_info.h",
         "init_main.h",
+        "intrusive_ptr.h",
         "load_library.h",
         "logging.h",
         "macros.h",
@@ -1633,7 +1739,11 @@ filegroup(
         "snappy.h",
         "stacktrace.h",
         "status.cc",
+        "stack_frame.h",
         "status.h",
+        "statusor.h",
+        "statusor_internals.h",
+        "statusor.cc",
         "str_util.cc",
         "str_util.h",
         "strcat.cc",
@@ -1649,15 +1759,15 @@ filegroup(
         "tracing.h",
         "tstring.h",
         "types.h",
-    ] + if_chromiumos(
-        tf_google_mobile_srcs_no_runtime(),
-        otherwise = [
+    ] + selects.with_or({
+        ("//tensorflow:chromiumos", "//tensorflow:fuchsia"): tf_google_mobile_srcs_no_runtime(),
+        "//conditions:default": [
             "//tensorflow/core/platform/default:mobile_srcs_no_runtime",
             "file_system_helper.cc",
             "threadpool.cc",
             "tracing.cc",
         ],
-    ) + tf_platform_alias("additional_mobile_srcs_no_runtime"),
+    }) + tf_platform_alias("additional_mobile_srcs_no_runtime"),
     visibility = ["//tensorflow/core:__pkg__"],
 )
 

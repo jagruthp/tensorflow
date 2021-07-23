@@ -15,6 +15,8 @@ limitations under the License.
 
 #include "tensorflow/compiler/xla/service/hlo_sharding.h"
 
+#include <string>
+
 #include "absl/algorithm/container.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/strings/str_cat.h"
@@ -67,7 +69,9 @@ HloSharding HloSharding::PartialTile(
 HloSharding HloSharding::PartialTile(
     const Array<int64>& tile_assignment_last_dim_replicate,
     absl::Span<const OpMetadata> metadata) {
-  if (tile_assignment_last_dim_replicate.num_dimensions() == 1) {
+  if (tile_assignment_last_dim_replicate.num_dimensions() == 1 ||
+      tile_assignment_last_dim_replicate.dimensions().back() ==
+          tile_assignment_last_dim_replicate.num_elements()) {
     return Replicate(metadata);
   }
   if (tile_assignment_last_dim_replicate.dimensions().back() == 1) {
@@ -95,9 +99,10 @@ HloSharding HloSharding::PartialTile(
       });
   Array<int64> sorted_tile(tile_assignment_last_dim_replicate.dimensions());
   sorted_tile.Each([&](absl::Span<const int64> indices, int64* device) {
-    auto begin = sorted_groups[get_group_id(indices)].begin();
+    const int64 group_id = get_group_id(indices);
+    auto begin = sorted_groups[group_id].begin();
     *device = *begin;
-    sorted_groups[get_group_id(indices)].erase(begin);
+    sorted_groups[group_id].erase(begin);
   });
   return HloSharding(sorted_tile, /*replicate_on_last_tile_dim=*/true,
                      metadata);
@@ -151,12 +156,19 @@ HloSharding HloSharding::Single(const Shape& shape,
 string HloSharding::ToString(bool include_metadata) const {
   if (IsTuple()) {
     CHECK(metadata_.empty());
-    std::vector<string> parts;
-    parts.reserve(tuple_elements_.size());
-    for (const HloSharding& element : tuple_elements_) {
-      parts.push_back(element.ToString(include_metadata));
+    std::string result = "{";
+    for (int i = 0; i < tuple_elements_.size(); ++i) {
+      const HloSharding& element = tuple_elements_[i];
+      if (i != 0) {
+        absl::StrAppend(&result, ", ");
+        if (i % 5 == 0) {
+          absl::StrAppend(&result, "/*index=", i, "*/");
+        }
+      }
+      absl::StrAppend(&result, element.ToString(include_metadata));
     }
-    return StrCat("{", absl::StrJoin(parts, ", "), "}");
+    absl::StrAppend(&result, "}");
+    return result;
   }
 
   std::string metadata;
@@ -426,20 +438,19 @@ Status HloSharding::ValidateNonTuple(const Shape& shape,
   // unique.
   Status status = Status::OK();
   absl::flat_hash_set<int64> seen_cores;
-  tile_assignment_.Each(
-      [&](absl::Span<const int64> indices, int32 core) {
-        // Don't overwrite a bad status, so we report the first error.
-        if (status.ok()) {
-          if (core >= num_devices) {
-            status = tensorflow::errors::InvalidArgument(StrCat(
-                "core ", core, " > ", num_devices, " in tile assignment"));
-          } else if (seen_cores.contains(core)) {
-            status = tensorflow::errors::InvalidArgument(
-                StrCat("core ", core, " is not unique in tile assignment"));
-          }
-          seen_cores.insert(core);
-        }
-      });
+  tile_assignment_.Each([&](absl::Span<const int64> indices, int32 core) {
+    // Don't overwrite a bad status, so we report the first error.
+    if (status.ok()) {
+      if (core >= num_devices) {
+        status = tensorflow::errors::InvalidArgument(
+            StrCat("core ", core, " > ", num_devices, " in tile assignment"));
+      } else if (seen_cores.contains(core)) {
+        status = tensorflow::errors::InvalidArgument(
+            StrCat("core ", core, " is not unique in tile assignment"));
+      }
+      seen_cores.insert(core);
+    }
+  });
   if (!status.ok()) {
     return status;
   }

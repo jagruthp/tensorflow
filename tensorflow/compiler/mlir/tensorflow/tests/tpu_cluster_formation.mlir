@@ -316,15 +316,16 @@ func @sort_replicated_input(%arg0: tensor<i1>, %arg1: tensor<i1>, %arg2: tensor<
 }
 
 // CHECK:      tf_device.replicate
-// CHECK-SAME: [%[[ARG_2]], %[[ARG_2]]] as %{{[a-z0-9]*}}
-// CHECK-SAME: [%[[ARG_4]], %[[ARG_4]]] as %{{[a-z0-9]*}}
-// CHECK-SAME: [%[[ARG_1]], %[[ARG_1]]] as %{{[a-z0-9]*}}
-// CHECK-DAG:  [%[[ARG_0]], %[[ARG_0]]] as %{{[a-z0-9]*}}
-// CHECK-DAG:  [%[[ARG_3]], %[[ARG_3]]] as %{{[a-z0-9]*}}
-// CHECK-DAG:  [%[[ARG_7]], %[[ARG_7]]] as %{{[a-z0-9]*}}
-// CHECK-DAG:  %[[ARG_6]] as %{{[a-z0-9]*}}
-// CHECK-DAG:  %[[ARG_5]] as %{{[a-z0-9]*}}
+// CHECK-SAME: [%[[ARG_2]], %[[ARG_2]]] as %[[RI_2:[a-z0-9]*]]
+// CHECK-SAME: [%[[ARG_4]], %[[ARG_4]]] as %[[RI_4:[a-z0-9]*]]
+// CHECK-SAME: [%[[ARG_1]], %[[ARG_1]]] as %[[RI_1:[a-z0-9]*]]
+// CHECK-DAG:  [%[[ARG_0]], %[[ARG_0]]] as %[[RI_0:[a-z0-9]*]]
+// CHECK-DAG:  [%[[ARG_3]], %[[ARG_3]]] as %[[RI_3:[a-z0-9]*]]
+// CHECK-DAG:  [%[[ARG_7]], %[[ARG_7]]] as %[[RI_7:[a-z0-9]*]]
+// CHECK-DAG:  %[[ARG_6]] as %[[RI_6:[a-z0-9]*]]
+// CHECK-DAG:  %[[ARG_5]] as %[[RI_5:[a-z0-9]*]]
 // CHECK-SAME: _replicated_input_indices = [0, 1, 3, -1, -1, -1, 2, -1]
+// CHECK: "tf.opA"(%[[RI_0]], %[[RI_1]], %[[RI_2]], %[[RI_3]], %[[RI_4]], %[[RI_5]], %[[RI_6]], %[[RI_7]])
 
 
 // Test TPUReplicatedInputs with non contiguous `index` attributes.
@@ -391,7 +392,7 @@ func @resource_after_cluster(%arg0: tensor<*x!tf.resource<tensor<f32>>>, %arg1: 
   // CHECK-NEXT:   "tf.ReadVariableOp"([[USED_RESOURCE]])
   // CHECK-NEXT:   "tf.NoOp"
   // CHECK-NEXT:   tf_device.return
-  "tf.TPUReplicateMetadata"() {_tpu_replicate = "cluster_test_fn", allow_soft_placement = false, computation_shape = [], device_assignment = [], host_compute_core = [], num_cores_per_replica = 1 : i64, num_replicas = 1 : i64, padding_map = [], step_marker_location = "STEP_MARK_AT_ENTRY", topology = "", use_spmd_for_xla_partitioning = false, use_tpu = true} : () -> ()
+  "tf.TPUReplicateMetadata"() {_tpu_replicate = "cluster_test_fn", allow_soft_placement = false, computation_shape = [], device_assignment = [], host_compute_core = [], num_cores_per_replica = 1 : i64, num_replicas = 1 : i64, step_marker_location = "STEP_MARK_AT_ENTRY", topology = "", use_spmd_for_xla_partitioning = false, use_tpu = true} : () -> ()
   %1 = "tf.ReadVariableOp"(%arg0) {_tpu_replicate = "cluster_test_fn"} : (tensor<*x!tf.resource<tensor<f32>>>) -> tensor<f32>
 
   "tf.AssignSubVariableOp"(%arg1, %0) : (tensor<*x!tf.resource<tensor<f32>>>, tensor<f32>) -> ()
@@ -416,7 +417,7 @@ func @resource_before_cluster() {
   // CHECK:      "tf_device.cluster"
   // CHECK-NEXT:   "tf.NoOp"
   // CHECK-NEXT:   tf_device.return
-  "tf.TPUReplicateMetadata"() {_tpu_replicate = "cluster_test_fn", allow_soft_placement = false, computation_shape = [], device_assignment = [], host_compute_core = [], num_cores_per_replica = 1 : i64, num_replicas = 1 : i64, padding_map = [], step_marker_location = "STEP_MARK_AT_ENTRY", topology = "", use_spmd_for_xla_partitioning = false, use_tpu = true} : () -> ()
+  "tf.TPUReplicateMetadata"() {_tpu_replicate = "cluster_test_fn", allow_soft_placement = false, computation_shape = [], device_assignment = [], host_compute_core = [], num_cores_per_replica = 1 : i64, num_replicas = 1 : i64, step_marker_location = "STEP_MARK_AT_ENTRY", topology = "", use_spmd_for_xla_partitioning = false, use_tpu = true} : () -> ()
 
   %1 = "tf.VarHandleOp"() {container = "", shape = #tf.shape<>, shared_name = "x"} : () -> tensor<*x!tf.resource<tensor<f32>>>
   "tf.AssignAddVariableOp"(%1, %0) : (tensor<*x!tf.resource<tensor<f32>>>, tensor<f32>) -> ()
@@ -684,3 +685,17 @@ func @input_index_gaps(%arg0: tensor<i1>) {
   "tf.TPUReplicateMetadata"() {_tpu_replicate = "replicate", device = "device", num_replicas = 2, topology = "topology"} : () -> ()
   return
 }
+
+// -----
+
+// CHECK-LABEL: func @cluster_ops_keep_replicated_core_attr
+func @cluster_ops_keep_replicated_core_attr() {
+  %0 = "tf.opA"() {_tpu_replicate = "replicate", device = "/device:TPU_REPLICATED_CORE:0", name = "name"} : () -> tensor<i1>
+  "tf.TPUReplicateMetadata"() {_tpu_replicate = "replicate", device = "device", num_replicas = 1, topology = "topology"} : () -> ()
+  return
+}
+
+// CHECK:      "tf.opA"
+// CHECK-SAME-DAG: name = "name"
+// CHECK-SAME-DAG:  device = "/device:TPU_REPLICATED_CORE:0"
+// CHECK:      tf_device.return

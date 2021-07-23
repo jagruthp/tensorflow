@@ -23,6 +23,7 @@ limitations under the License.
 #include "tensorflow/compiler/xla/service/gpu/gpu_fusible.h"
 #include "tensorflow/compiler/xla/service/gpu/instruction_fusion.h"
 #include "tensorflow/compiler/xla/service/hlo_cost_analysis.h"
+#include "tensorflow/compiler/xla/service/hlo_graph_dumper.h"
 #include "tensorflow/compiler/xla/service/llvm_ir/fused_ir_emitter.h"
 #include "tensorflow/compiler/xla/shape_util.h"
 #include "tensorflow/compiler/xla/util.h"
@@ -245,7 +246,7 @@ Status FusionInstructionMerger::HandleFusion(HloInstruction* fusion) {
       (fusion->user_count() == 1 || (merged_to_current_bytes_ratio < 0.3 &&
                                      current_bytes_transferred > 1024)) &&
       !absl::c_any_of(fusion->users(), [fusion](const HloInstruction* user) {
-        int64 operand_index = user->operand_index(fusion);
+        int64_t operand_index = user->operand_index(fusion);
         return user->ReusesOperandElements(operand_index);
       });
 
@@ -314,7 +315,15 @@ Status FusionInstructionMerger::HandleFusion(HloInstruction* fusion) {
           << " }";
   // Remove 'fusion' instruction.
   CHECK_EQ(0, fusion->user_count()) << fusion->ToString();
-  return computation_->RemoveInstruction(fusion);
+  TF_RETURN_IF_ERROR(computation_->RemoveInstruction(fusion));
+  if (computation_->parent()
+          ->config()
+          .debug_options()
+          .xla_dump_fusion_visualization()) {
+    TF_RETURN_IF_ERROR(RegisterFusionState(*computation_, "fusion merger"));
+  }
+
+  return Status::OK();
 }
 
 StatusOr<bool> FusionMerger::Run(HloModule* module) {

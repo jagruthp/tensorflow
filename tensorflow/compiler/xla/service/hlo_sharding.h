@@ -150,6 +150,10 @@ class HloSharding {
                           [](const HloSharding& s) { return s.IsManual(); });
   }
 
+  // Returns weather the sharding represents a tiled sharding where the mapping
+  // between devices and tiles is represented through 'tile_assignment()'.
+  bool IsTiled() const { return !IsTileMaximal() && !IsManual(); }
+
   // Returns if the sharding has partial replication and partial sharding. If
   // true, data is sharded according to other dimensions of tile_assignment(),
   // but replicated across devices along the last dimension.
@@ -285,7 +289,8 @@ class HloSharding {
   int64 NumTiles(absl::Span<const int64> dims) const;
 
   // Gets metadata from sharding.
-  absl::Span<const OpMetadata> metadata() const { return metadata_; }
+  std::vector<OpMetadata>& metadata() { return metadata_; }
+  const std::vector<OpMetadata>& metadata() const { return metadata_; }
 
  private:
   explicit HloSharding(bool manual, bool replicated,
@@ -371,7 +376,7 @@ class HloSharding {
   // replications, i.e., elements in slice [..., :] will be replicated.
   bool replicate_on_last_tile_dim_;
   // This field is used to track the source of this sharding, usually derived
-  // from instructions. Multple metadata may be populated if sharding is
+  // from instructions. Multiple metadata may be populated if sharding is
   // combined with other shardings. Metadata are to not be populated when
   // tuple_ == true and instead metadata should be set on individual tuple
   // elements.

@@ -20,10 +20,12 @@ limitations under the License.
 #include <stdint.h>
 
 #include "tensorflow/c/tf_attrtype.h"
-#include "tensorflow/c/tf_status.h"
 #include "tensorflow/core/tpu/libtftpu.h"
 
 extern "C" {
+
+struct TF_Status;
+typedef struct TF_Status TF_Status;
 
 // Maximum number of array elements to inline into structs for performance.
 #define TPU_C_API_MAX_INLINED 6
@@ -167,6 +169,9 @@ typedef struct SE_ExecutableRunOptions {
   int64_t run_id;
   int launch_id;
 } SE_ExecutableRunOptions;
+
+typedef struct SE_ExecutableSerializationHandle
+    SE_ExecutableSerializationHandle;
 
 typedef struct SE_MaybeOwningDeviceMemory {
   SE_DeviceMemoryBase memory;

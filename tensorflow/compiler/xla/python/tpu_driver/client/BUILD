@@ -8,7 +8,7 @@ load("//tensorflow:tensorflow.bzl", "pybind_extension")
 
 package(
     default_visibility = ["//tensorflow:internal"],
-    licenses = ["notice"],  # Apache 2.0
+    licenses = ["notice"],
 )
 
 cc_library(
@@ -41,6 +41,7 @@ cc_library(
         "//tensorflow/core/platform:env",
         "//tensorflow/core/profiler/lib:traceme",
         "@com_google_absl//absl/memory",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/time",
         "@com_google_absl//absl/types:span",
@@ -65,6 +66,7 @@ pybind_extension(
         "//tensorflow/compiler/xla/python:types",
         "//tensorflow/compiler/xla/service:computation_placer",
         "//tensorflow/compiler/xla/service:hlo_graph_dumper",
+        "//tensorflow/python:bfloat16_lib",
         "//third_party/py/numpy:headers",
         "//third_party/python_runtime:headers",  # buildcleaner: keep
         "@pybind11",

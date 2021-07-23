@@ -66,6 +66,11 @@ OperatorProperty GetOperatorProperty(OpVariant op_variant) {
   OperatorProperty property;
   switch (op_code) {
     case BuiltinOperator_ABS:
+      property.inputs = {{0, {}}};
+      property.outputs = {{0, {}}};
+      property.version = 2;
+      property.restrict_same_input_output_scale = true;
+      break;
     case BuiltinOperator_RSQRT:
       property.inputs = {{0, {}}};
       property.outputs = {{0, {}}};
@@ -192,6 +197,13 @@ OperatorProperty GetOperatorProperty(OpVariant op_variant) {
       property.outputs = {{0, {}}};
       property.version = 1;
       break;
+    case BuiltinOperator_FILL: {
+      property.inputs = {{1, {}}};
+      property.outputs = {{0, {}}};
+      property.restrict_same_input_output_scale = true;
+      property.version = 3;
+      break;
+    }
     case BuiltinOperator_FULLY_CONNECTED: {
       TensorProperty tensor_property;
       tensor_property.symmetric = true;
@@ -251,7 +263,6 @@ OperatorProperty GetOperatorProperty(OpVariant op_variant) {
         property.quantizable = false;
         break;
       }
-      // TODO(jianlijianli): extend LSTM op spec to include input, bias etc.
       // LSTM needs 5 intermediate tensors. This agrees with the fully quantized
       // kernels in lstm_eval.cc
       if (op_variant.use_layer_norm && op_variant.use_projection &&
@@ -842,7 +853,6 @@ OperatorProperty GetOperatorProperty(OpVariant op_variant) {
       property.arbitrary_inputs = true;
       property.outputs = {{0, {}}};
       property.restrict_same_input_output_scale = true;
-      property.restrict_same_input_output_scale = true;
       property.version = 2;
       break;
     case BuiltinOperator_PAD:
@@ -899,6 +909,18 @@ OperatorProperty GetOperatorProperty(OpVariant op_variant) {
       property.outputs = {{0, {}}};
       property.restrict_same_input_output_scale = true;
       property.version = 3;
+      break;
+    case BuiltinOperator_SCATTER_ND:
+      property.inputs = {{1, {}}};
+      property.outputs = {{0, {}}};
+      property.restrict_same_input_output_scale = true;
+      property.version = 1;
+      break;
+    case BuiltinOperator_SELECT:
+      property.inputs = {{1, {}}, {2, {}}};
+      property.outputs = {{0, {}}};
+      property.restrict_same_input_output_scale = true;
+      property.version = 1;
       break;
     case BuiltinOperator_SHAPE:
       property.inputs = {{0, {}}};
@@ -1002,12 +1024,22 @@ OperatorProperty GetOperatorProperty(OpVariant op_variant) {
       property.version = 2;
       property.quantizable_int16 = false;
       break;
+    case BuiltinOperator_REDUCE_PROD:
+      property.inputs = {{0, {}}};
+      property.outputs = {{0, {}}};
+      property.version = 2;
+      break;
     case BuiltinOperator_REDUCE_MAX:
     case BuiltinOperator_REDUCE_MIN:
       property.inputs = {{0, {}}};
       property.outputs = {{0, {}}};
       property.restrict_same_input_output_scale = true;
       property.version = 2;
+      break;
+    case BuiltinOperator_WHERE:
+      property.inputs = {{0, {}}};
+      property.outputs = {{0, {}}};
+      property.version = 1;
       break;
     default:
       // No quantized implementation exists for this operation.

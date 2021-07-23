@@ -24,6 +24,7 @@ limitations under the License.
 #include <vector>
 
 #include <gtest/gtest.h>
+#include "tensorflow/lite/internal/signature_def.h"
 #include "tensorflow/lite/interpreter.h"
 #include "tensorflow/lite/kernels/internal/compatibility.h"
 #include "tensorflow/lite/string_util.h"
@@ -52,12 +53,16 @@ class InterpreterTest : public ::testing::Test {
   void BuildSignature(const std::string& method_name, const std::string& key,
                       const std::map<std::string, uint32_t>& inputs,
                       const std::map<std::string, uint32_t>& outputs) {
-    Interpreter::SignatureDef signature;
+    internal::SignatureDef signature;
     signature.inputs = inputs;
     signature.outputs = outputs;
     signature.method_name = method_name;
     signature.signature_def_key = key;
     interpreter_.SetSignatureDef({signature});
+  }
+
+  TfLiteStatus SetExecutionPlan(const std::vector<int>& new_plan) {
+    return interpreter_.SetExecutionPlan(new_plan);
   }
 
   Interpreter interpreter_;

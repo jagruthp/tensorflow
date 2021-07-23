@@ -6,12 +6,13 @@ package(
     default_visibility = [
         "//learning/brain/experimental/dtensor:__subpackages__",
         "//tensorflow/compiler/jit:__subpackages__",
+        "//tensorflow/compiler/mlir:__subpackages__",
         "//tensorflow/compiler/xla:__subpackages__",
         "//tensorflow/compiler/xrt:__subpackages__",
         "//tensorflow/core/profiler/internal/tpu:__subpackages__",
         "//tensorflow/core/tpu:__subpackages__",
     ],
-    licenses = ["notice"],  # Apache 2.0
+    licenses = ["notice"],
 )
 
 cc_library(
@@ -22,7 +23,6 @@ cc_library(
     ],
     deps = [
         "//tensorflow/c:tf_attrtype",
-        "//tensorflow/c:tf_status",
         "//tensorflow/core/tpu:libtftpu_header",
         "//tensorflow/stream_executor:stream_executor_headers",
     ],
@@ -159,7 +159,7 @@ cc_library(
         ":tpu_topology_external",
         "//tensorflow/core:lib",
         "//tensorflow/core/tpu:tpu_api",
-        "//tensorflow/stream_executor",
+        "//tensorflow/stream_executor:stream_executor_headers",
         "//tensorflow/stream_executor/lib",
         "@com_google_absl//absl/container:flat_hash_map",
     ],
@@ -275,9 +275,9 @@ cc_library(
 )
 
 cc_library(
-    name = "tpu_executable",
-    srcs = ["tpu_executable.cc"],
-    hdrs = ["tpu_executable.h"],
+    name = "tpu_op_executable",
+    srcs = ["tpu_op_executable.cc"],
+    hdrs = ["tpu_op_executable.h"],
     deps = [
         ":c_api_conversions",
         ":proto_helper",
@@ -358,6 +358,21 @@ cc_library(
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/types:optional",
         "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "tpu_executable",
+    srcs = ["tpu_executable.cc"],
+    hdrs = ["tpu_executable.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":c_api_conversions",
+        ":status_helper",
+        ":tpu_executable_interface",
+        ":tpu_executor",
+        ":tpu_executor_c_api_hdrs",
+        "//tensorflow/core/tpu:tpu_executor_api",
     ],
 )
 

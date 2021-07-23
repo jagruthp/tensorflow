@@ -36,6 +36,24 @@ struct GatherParallelDims {
   std::vector<int64> index_parallel_in_dim;
 };
 
+// Returns true if the lhs sharding is preferable over the rhs sharding.
+// The most specific sharding is tile maximal followed by single device tile
+// maximal and finally replicated. This order aims to primarily reduce memory
+// usage and secondly reduce total compute.
+// Note: This does NOT provide a total ordering as we can have 2 different
+// sharding with same preference level.
+bool IsShardingMoreSpecific(const HloSharding& lhs, const HloSharding& rhs);
+
+// Tries to refine `to_merge` by combining with `old`. Returns if the final
+// `to_merge` is more specific than `old`.
+bool MergeSharding(const HloSharding& old, HloSharding* to_merge,
+                   bool may_combine_partial_sharding);
+
+// Merges `to_merge` into `dst` only if they are compatible, and the merged
+// sharding has >= minimum_tiles tiles. Returns if merging happened.
+bool MergeShardingIfCompatible(const HloSharding& to_merge, int64 minimum_tiles,
+                               HloSharding* dst);
+
 // Given a map<device, occurrence_count>, selects the device with higher
 // occurrence count (if any). If top_count in not nullptr, it will receive the
 // count of the dominant device returned.
@@ -137,7 +155,8 @@ HloSharding ScatterEffectiveDataSharding(const HloSharding& data_sharding,
 // Returns an output sharding of gather by passing through the data operand's
 // sharding.
 absl::optional<HloSharding> GatherOutputShardingFromDataOperand(
-    const HloSharding& data_operand_sharding, const HloInstruction& hlo);
+    const HloSharding& data_operand_sharding, const HloInstruction& hlo,
+    const Shape& output_shape, const Shape& operand_shape);
 
 // Returns a data operand sharding of gather by passing through the output's
 // sharding.
@@ -173,7 +192,12 @@ std::vector<int64> DevicesForSharding(
 // Returns a sharding that replicates data across devices along the given
 // dimensions in the original sharding.
 HloSharding PartiallyReplicateTiledShardingOnDims(
-    const HloSharding& sharding, const std::vector<int64>& dims_to_replicate);
+    const HloSharding& sharding, absl::Span<const int64> dims_to_replicate);
+
+// Returns a sharding that replicates data across devices along all dimensions
+// but the given ones to keep in the original sharding.
+HloSharding PartiallyReplicateTiledShardingOnAllDimsExcept(
+    const HloSharding& sharding, absl::Span<const int64> dims_to_keep);
 
 // Returns a sharding the removes given tile dimensions.
 //
@@ -187,6 +211,10 @@ HloSharding RemoveShapeDimensions(const HloSharding& sharding,
 absl::optional<HloSharding> TransposeShardingWithCollapsedDims(
     const HloSharding& source, absl::Span<int64 const> src_to_tgt,
     absl::Span<int64 const> tgt_to_src);
+
+// Returns the iota dimension if maybe_iota is an kIota instruction or
+// equivalent to kIota.
+absl::optional<int64> GetDimensionForIota(const HloInstruction* maybe_iota);
 
 // Returns identified parallel dimensions for Gather.
 absl::optional<GatherParallelDims> GetGatherBatchParallelDims(

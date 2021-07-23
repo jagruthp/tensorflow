@@ -15,12 +15,24 @@ limitations under the License.
 #ifndef TENSORFLOW_CORE_DATA_SERVICE_DISPATCHER_STATE_H_
 #define TENSORFLOW_CORE_DATA_SERVICE_DISPATCHER_STATE_H_
 
+#include <memory>
+#include <queue>
+#include <string>
+#include <utility>
+#include <vector>
+
 #include "absl/container/flat_hash_map.h"
+#include "absl/container/flat_hash_set.h"
+#include "absl/strings/string_view.h"
+#include "absl/types/optional.h"
+#include "tensorflow/core/data/service/auto_shard_rewriter.h"
 #include "tensorflow/core/data/service/common.pb.h"
 #include "tensorflow/core/data/service/data_service.h"
 #include "tensorflow/core/data/service/journal.h"
 #include "tensorflow/core/data/service/journal.pb.h"
-#include "tensorflow/core/lib/core/status.h"
+#include "tensorflow/core/platform/status.h"
+#include "tensorflow/core/protobuf/data_service.pb.h"
+#include "tensorflow/core/protobuf/service_config.pb.h"
 
 namespace tensorflow {
 namespace data {
@@ -52,6 +64,8 @@ namespace data {
 class DispatcherState {
  public:
   DispatcherState();
+  explicit DispatcherState(
+      const experimental::DispatcherConfig& dispatcher_config);
   DispatcherState(const DispatcherState&) = delete;
   DispatcherState& operator=(const DispatcherState&) = delete;
 
@@ -97,15 +111,36 @@ class DispatcherState {
   };
 
   struct DistributedEpochState {
-    // The current repetition.
-    int64 repetition = 0;
-    // Number of splits produced so far by the current split provider.
-    int64 split_provider_index = 0;
+    explicit DistributedEpochState(int64 num_split_providers)
+        : repetitions(num_split_providers), indices(num_split_providers) {}
+
+    // The current repetition for each split provider.
+    std::vector<int64> repetitions;
+    // Number of splits produced so far by each split provider.
+    std::vector<int64> indices;
+  };
+
+  struct Task;
+
+  struct PendingTask {
+    explicit PendingTask(std::shared_ptr<Task> task, int64 target_round)
+        : task(std::move(task)), target_round(target_round) {}
+
+    std::shared_ptr<Task> task;
+    // The target round where we want to insert the task.
+    int64 target_round;
+    // Which consumers have responded that they have successfully blocked
+    // before the target round.
+    absl::flat_hash_set<int64> ready_consumers;
+    // How many times we have failed to add the task.
+    int64 failures = 0;
   };
 
   // A job for processing a dataset.
   struct Job {
-    explicit Job(int64 job_id, int64 dataset_id, ProcessingMode processing_mode,
+    explicit Job(int64 job_id, int64 dataset_id,
+                 const ProcessingModeDef& processing_mode,
+                 int64 num_split_providers,
                  absl::optional<NamedJobKey> named_job_key,
                  absl::optional<int64> num_consumers)
         : job_id(job_id),
@@ -113,20 +148,33 @@ class DispatcherState {
           processing_mode(processing_mode),
           named_job_key(named_job_key),
           num_consumers(num_consumers) {
-      if (processing_mode == ProcessingMode::DISTRIBUTED_EPOCH) {
-        distributed_epoch_state = DistributedEpochState();
+      if (IsDynamicShard(processing_mode)) {
+        distributed_epoch_state = DistributedEpochState(num_split_providers);
       }
+    }
+
+    bool IsRoundRobin() const { return num_consumers.has_value(); }
+
+    std::string DebugString() const {
+      if (named_job_key.has_value()) {
+        return absl::StrCat(named_job_key.value().name, "_",
+                            named_job_key.value().index);
+      }
+      return absl::StrCat(job_id);
     }
 
     const int64 job_id;
     const int64 dataset_id;
-    const ProcessingMode processing_mode;
+    const ProcessingModeDef processing_mode;
     const absl::optional<NamedJobKey> named_job_key;
     absl::optional<DistributedEpochState> distributed_epoch_state;
     absl::optional<int64> num_consumers;
+    std::queue<PendingTask> pending_tasks;
     int64 num_clients = 0;
     int64 last_client_released_micros = -1;
     bool finished = false;
+    // Indicates whether the job was garbage collected.
+    bool garbage_collected = false;
   };
 
   struct Task {
@@ -142,11 +190,17 @@ class DispatcherState {
     const std::shared_ptr<Job> job;
     const std::string worker_address;
     const std::string transfer_address;
+    int64 starting_round = 0;
     bool finished = false;
+    bool removed = false;
   };
+
+  using TasksById = absl::flat_hash_map<int64, std::shared_ptr<Task>>;
 
   // Returns the next available dataset id.
   int64 NextAvailableDatasetId() const;
+  // Gets the element_spec by searching for the dataset_id key.
+  Status GetElementSpec(int64 dataset_id, std::string& element_spec) const;
   // Gets a dataset by id. Returns NOT_FOUND if there is no such dataset.
   Status DatasetFromId(int64 id, std::shared_ptr<const Dataset>& dataset) const;
   // Gets a dataset by fingerprint. Returns NOT_FOUND if there is no such
@@ -189,6 +243,15 @@ class DispatcherState {
   Status TasksForWorker(const absl::string_view worker_address,
                         std::vector<std::shared_ptr<const Task>>& tasks) const;
 
+  // If the dispatcher config explicitly specifies a list of workers, validates
+  // `worker_address` is in the list.
+  Status ValidateWorker(absl::string_view worker_address) const;
+
+  // If the dispatcher config specifies worker addresses, `GetWorkerIndex`
+  // returns the worker index according to the list. This is useful for
+  // deterministically sharding a dataset among a fixed set of workers.
+  StatusOr<int64> GetWorkerIndex(absl::string_view worker_address) const;
+
  private:
   void RegisterDataset(const RegisterDatasetUpdate& register_dataset);
   void RegisterWorker(const RegisterWorkerUpdate& register_worker);
@@ -196,8 +259,13 @@ class DispatcherState {
   void ProduceSplit(const ProduceSplitUpdate& produce_split);
   void AcquireJobClient(const AcquireJobClientUpdate& acquire_job_client);
   void ReleaseJobClient(const ReleaseJobClientUpdate& release_job_client);
+  void GarbageCollectJob(const GarbageCollectJobUpdate& garbage_collect_job);
+  void RemoveTask(const RemoveTaskUpdate& remove_task);
+  void CreatePendingTask(const CreatePendingTaskUpdate& create_pending_task);
+  void ClientHeartbeat(const ClientHeartbeatUpdate& client_heartbeat);
   void CreateTask(const CreateTaskUpdate& create_task);
   void FinishTask(const FinishTaskUpdate& finish_task);
+  void SetElementSpec(const SetElementSpecUpdate& set_element_spec);
 
   int64 next_available_dataset_id_ = 1000;
   // Registered datasets, keyed by dataset ids.
@@ -205,9 +273,15 @@ class DispatcherState {
   // Registered datasets, keyed by dataset fingerprints.
   absl::flat_hash_map<uint64, std::shared_ptr<Dataset>>
       datasets_by_fingerprint_;
+  // Saved element_spec, keyed by dataset ids.
+  absl::flat_hash_map<int64, std::string> id_element_spec_info_;
 
   // Registered workers, keyed by address.
   absl::flat_hash_map<std::string, std::shared_ptr<Worker>> workers_;
+
+  // Assigns an index to each worker according to worker addresses list
+  // specified in the dispatcher config.
+  WorkerIndexResolver worker_index_resolver_;
 
   int64 next_available_job_id_ = 2000;
   // Jobs, keyed by job ids.
@@ -222,14 +296,12 @@ class DispatcherState {
 
   int64 next_available_task_id_ = 4000;
   // Tasks, keyed by task ids.
-  absl::flat_hash_map<int64, std::shared_ptr<Task>> tasks_;
-  // Tasks, keyed by job ids.
+  TasksById tasks_;
+  // List of tasks associated with each job.
   absl::flat_hash_map<int64, std::vector<std::shared_ptr<Task>>> tasks_by_job_;
   // Tasks, keyed by worker addresses. The values are a map from task id to
   // task.
-  absl::flat_hash_map<std::string,
-                      absl::flat_hash_map<int64, std::shared_ptr<Task>>>
-      tasks_by_worker_;
+  absl::flat_hash_map<std::string, TasksById> tasks_by_worker_;
 };
 
 }  // namespace data

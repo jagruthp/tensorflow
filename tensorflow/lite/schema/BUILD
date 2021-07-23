@@ -20,7 +20,7 @@ package(
     default_visibility = [
         "//visibility:public",
     ],
-    licenses = ["notice"],  # Apache 2.0
+    licenses = ["notice"],
 )
 
 py_binary(
@@ -67,6 +67,22 @@ py_test(
         "//tensorflow/python:framework_test_lib",
     ],
 )
+
+# copybara:uncomment_begin(google-only)
+# py_test(
+#     name = "schema_validation_test",
+#     srcs = ["schema_validation_test.py"],
+#     data = [
+#         "//tensorflow/lite/schema:schema_fbs_srcs",
+#         "//tensorflow/lite/schema:schema_generated.h.oss",
+#     ],
+#     python_version = "PY3",
+#     deps = [
+#         "//testing/pybase",
+#         "@absl_py//absl/flags",
+#     ],
+# )
+# copybara:uncomment_end
 
 exports_files([
     "schema.fbs",
@@ -126,7 +142,7 @@ cc_test(
     ],
     deps = [
         "//tensorflow/core/platform",
-        "@com_google_googletest//:gtest",
+        "@com_google_googletest//:gtest_main",
         "@flatbuffers//:flatc_library",
     ],
 )

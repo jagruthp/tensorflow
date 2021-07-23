@@ -6,7 +6,7 @@ package(
     default_visibility = [
         "//visibility:public",
     ],
-    licenses = ["notice"],  # Apache 2.0
+    licenses = ["notice"],
 )
 
 exports_files([
@@ -17,6 +17,16 @@ py_binary(
     name = "visualize",
     srcs = ["visualize.py"],
     python_version = "PY3",
+    srcs_version = "PY3",
+    deps = [
+        "//tensorflow/lite/python:schema_py",
+        "//third_party/py/numpy",
+    ],
+)
+
+py_library(
+    name = "visualize_lib",
+    srcs = ["visualize.py"],
     srcs_version = "PY3",
     deps = [
         "//tensorflow/lite/python:schema_py",
@@ -179,7 +189,7 @@ cc_test(
     ],
     deps = [
         ":gen_op_registration",
-        "@com_google_googletest//:gtest",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -191,6 +201,7 @@ cc_library(
         "//tensorflow/lite:framework",
         "//tensorflow/lite:schema_fbs_version",
         "//tensorflow/lite:string_util",
+        "//tensorflow/lite:util",
         "//tensorflow/lite/c:common",
         "//tensorflow/lite/core/api:error_reporter",
         "//tensorflow/lite/core/api:op_resolver",
@@ -220,7 +231,7 @@ cc_test(
         "//tensorflow/lite/schema:schema_conversion_utils",
         "//tensorflow/lite/schema:schema_fbs",
         "//tensorflow/lite/testing:util",
-        "@com_google_googletest//:gtest",
+        "@com_google_googletest//:gtest_main",
         "@flatbuffers",
     ],
 )
@@ -255,7 +266,10 @@ cc_library(
     srcs = ["command_line_flags.cc"],
     hdrs = ["command_line_flags.h"],
     copts = tflite_copts(),
-    deps = ["//tensorflow/lite/tools:logging"],
+    deps = [
+        "//tensorflow/lite/tools:logging",
+        "@com_google_absl//absl/strings",
+    ],
 )
 
 cc_test(
@@ -265,6 +279,7 @@ cc_test(
     visibility = ["//visibility:private"],
     deps = [
         ":command_line_flags",
+        ":tool_params",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -352,7 +367,7 @@ tf_cc_test(
         "//tensorflow/core/platform:protobuf",
         "//tensorflow/core/platform:resource_loader",
         "//tensorflow/lite/kernels:test_util",
-        "@com_google_googletest//:gtest",
+        "@com_google_googletest//:gtest_main",
         "@flatbuffers",
     ],
 )
